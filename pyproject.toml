@@ -1,0 +1,12 @@
+[project]
+name = "comfyui-metadata-overlay"
+version = "0.1.0"
+description = "ComfyUI plugin that overlays configurable generation metadata on the fullscreen image preview"
+license = "MIT"
+requires-python = ">=3.10"
+
+[tool.comfy]
+PublisherId = "fumb13s"
+DisplayName = "Metadata Overlay"
+Icon = ""
+web = "web"

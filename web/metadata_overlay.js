@@ -1,0 +1,461 @@
+import { app } from "../../scripts/app.js";
+
+const EXTENSION_NAME = "ComfyUI.MetadataOverlay";
+
+// Setting IDs
+const SETTINGS = {
+  ENABLED: "MetadataOverlay.Enabled",
+  FIELDS: "MetadataOverlay.Fields",
+  POSITION: "MetadataOverlay.Position",
+  OPACITY: "MetadataOverlay.Opacity",
+};
+
+const ALL_FIELDS = [
+  "model",
+  "loras",
+  "sampler",
+  "seed",
+  "prompt",
+  "negative_prompt",
+  "guidance",
+  "size",
+];
+
+const DEFAULT_FIELDS = ALL_FIELDS.join(",");
+
+const OVERLAY_ID = "metadata-overlay-panel";
+
+let currentOverlay = null;
+let observer = null;
+
+function getSetting(id, defaultValue) {
+  try {
+    const val = app.ui.settings.getSettingValue(id);
+    return val !== undefined && val !== null ? val : defaultValue;
+  } catch {
+    return defaultValue;
+  }
+}
+
+function isEnabled() {
+  return getSetting(SETTINGS.ENABLED, true);
+}
+
+function getSelectedFields() {
+  const raw = getSetting(SETTINGS.FIELDS, DEFAULT_FIELDS);
+  if (!raw) return ALL_FIELDS;
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function getPosition() {
+  return getSetting(SETTINGS.POSITION, "bottom-left");
+}
+
+function getOpacity() {
+  return getSetting(SETTINGS.OPACITY, 0.8);
+}
+
+/**
+ * Extract image URL info for fetching metadata.
+ * Returns { type: 'view' | 'asset', params } or null.
+ */
+function parseImageSrc(src) {
+  if (!src) return null;
+
+  try {
+    const url = new URL(src, window.location.origin);
+
+    // /view?filename=...&type=...&subfolder=...
+    if (url.pathname === "/view" || url.pathname.endsWith("/view")) {
+      const filename = url.searchParams.get("filename");
+      if (filename) {
+        return {
+          type: "view",
+          filename,
+          fileType: url.searchParams.get("type") || "output",
+          subfolder: url.searchParams.get("subfolder") || "",
+        };
+      }
+    }
+
+    // /api/assets/{uuid}/content
+    const assetMatch = url.pathname.match(
+      /\/api\/assets\/([0-9a-fA-F-]{36})\/content/
+    );
+    if (assetMatch) {
+      return {
+        type: "asset",
+        assetId: assetMatch[1],
+      };
+    }
+  } catch {
+    // ignore parse errors
+  }
+
+  return null;
+}
+
+async function fetchMetadata(imageInfo) {
+  try {
+    let url;
+    if (imageInfo.type === "view") {
+      const params = new URLSearchParams({
+        filename: imageInfo.filename,
+        type: imageInfo.fileType,
+        subfolder: imageInfo.subfolder,
+      });
+      url = `/metadata_overlay/image_metadata?${params}`;
+    } else if (imageInfo.type === "asset") {
+      url = `/metadata_overlay/asset_metadata?asset_id=${encodeURIComponent(imageInfo.assetId)}`;
+    } else {
+      return null;
+    }
+
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch {
+    return null;
+  }
+}
+
+function formatMetadata(metadata, selectedFields) {
+  const lines = [];
+
+  if (selectedFields.includes("model") && metadata.model) {
+    lines.push(`Model: ${metadata.model}`);
+  }
+
+  if (selectedFields.includes("loras") && metadata.loras?.length) {
+    for (const lora of metadata.loras) {
+      let s = `LoRA: ${lora.name}`;
+      if (lora.strength_model !== undefined) {
+        s += ` (model: ${lora.strength_model}`;
+        if (
+          lora.strength_clip !== undefined &&
+          lora.strength_clip !== lora.strength_model
+        ) {
+          s += `, clip: ${lora.strength_clip}`;
+        }
+        s += ")";
+      }
+      lines.push(s);
+    }
+  }
+
+  if (selectedFields.includes("sampler")) {
+    const parts = [];
+    if (metadata.sampler) parts.push(metadata.sampler);
+    if (metadata.scheduler) parts.push(metadata.scheduler);
+    if (metadata.steps) parts.push(`${metadata.steps} steps`);
+    if (metadata.cfg !== null && metadata.cfg !== undefined)
+      parts.push(`cfg ${metadata.cfg}`);
+    if (parts.length) lines.push(`Sampler: ${parts.join(", ")}`);
+  }
+
+  if (selectedFields.includes("seed") && metadata.seed !== null && metadata.seed !== undefined) {
+    lines.push(`Seed: ${metadata.seed}`);
+  }
+
+  if (selectedFields.includes("guidance") && metadata.guidance !== null && metadata.guidance !== undefined) {
+    lines.push(`Guidance: ${metadata.guidance}`);
+  }
+
+  if (selectedFields.includes("size") && metadata.size) {
+    lines.push(`Size: ${metadata.size}`);
+  }
+
+  if (selectedFields.includes("prompt") && metadata.positive_prompt) {
+    const text =
+      metadata.positive_prompt.length > 500
+        ? metadata.positive_prompt.slice(0, 500) + "..."
+        : metadata.positive_prompt;
+    lines.push(`Prompt: ${text}`);
+  }
+
+  if (selectedFields.includes("negative_prompt") && metadata.negative_prompt) {
+    const text =
+      metadata.negative_prompt.length > 300
+        ? metadata.negative_prompt.slice(0, 300) + "..."
+        : metadata.negative_prompt;
+    lines.push(`Negative: ${text}`);
+  }
+
+  return lines.join("\n");
+}
+
+function createOverlay(text, container) {
+  removeOverlay();
+
+  const position = getPosition();
+  const opacity = getOpacity();
+
+  const overlay = document.createElement("div");
+  overlay.id = OVERLAY_ID;
+  overlay.style.cssText = `
+    position: absolute;
+    ${position.includes("bottom") ? "bottom: 16px" : "top: 16px"};
+    ${position.includes("left") ? "left: 16px" : "right: 16px"};
+    background: rgba(0, 0, 0, ${opacity});
+    color: #e0e0e0;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 12px 16px;
+    border-radius: 8px;
+    max-width: 40%;
+    max-height: 50%;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    z-index: 10001;
+    pointer-events: auto;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  `;
+
+  overlay.textContent = text;
+  container.appendChild(overlay);
+  currentOverlay = overlay;
+}
+
+function removeOverlay() {
+  if (currentOverlay) {
+    currentOverlay.remove();
+    currentOverlay = null;
+  }
+  // Also clean up any orphaned overlays
+  document.querySelectorAll(`#${OVERLAY_ID}`).forEach((el) => el.remove());
+}
+
+/**
+ * Find the fullscreen lightbox image element.
+ * ComfyUI uses PrimeVue's Galleria component with class `p-galleria`.
+ */
+function findLightboxImage(root) {
+  // Look for galleria component (PrimeVue fullscreen gallery)
+  const galleria =
+    root?.querySelector?.(".p-galleria") ||
+    document.querySelector(".p-galleria");
+
+  if (!galleria) return null;
+
+  // Check if it's in fullscreen mode by looking for the mask/overlay
+  const isFullscreen =
+    galleria.closest(".p-galleria-mask") ||
+    galleria.classList.contains("p-galleria-fullscreen") ||
+    document.querySelector(".p-galleria-mask");
+
+  if (!isFullscreen) return null;
+
+  // Find the main image within the galleria
+  const img =
+    galleria.querySelector(".p-galleria-item img") ||
+    galleria.querySelector(".galleria-image") ||
+    galleria.querySelector("img.comfy-image-main") ||
+    galleria.querySelector("img");
+
+  return img;
+}
+
+/**
+ * Find the appropriate container to attach our overlay to.
+ */
+function findOverlayContainer(img) {
+  // Try to find the galleria item container (positioned element)
+  const galleriaItem = img.closest(".p-galleria-item");
+  if (galleriaItem) {
+    galleriaItem.style.position = "relative";
+    return galleriaItem;
+  }
+
+  // Fall back to the galleria mask
+  const mask = img.closest(".p-galleria-mask");
+  if (mask) return mask;
+
+  // Last resort: use parent
+  const parent = img.parentElement;
+  if (parent) {
+    parent.style.position = "relative";
+    return parent;
+  }
+
+  return document.body;
+}
+
+async function handleLightboxImage(img) {
+  if (!isEnabled()) return;
+  if (!img?.src) return;
+
+  const imageInfo = parseImageSrc(img.src);
+  if (!imageInfo) return;
+
+  // Don't re-fetch if overlay already exists for this image
+  if (currentOverlay && currentOverlay.dataset.src === img.src) return;
+
+  const metadata = await fetchMetadata(imageInfo);
+  if (!metadata) return;
+
+  const selectedFields = getSelectedFields();
+  const text = formatMetadata(metadata, selectedFields);
+  if (!text) return;
+
+  const container = findOverlayContainer(img);
+  createOverlay(text, container);
+  if (currentOverlay) {
+    currentOverlay.dataset.src = img.src;
+  }
+}
+
+function checkForLightbox() {
+  const img = findLightboxImage(document);
+  if (img) {
+    handleLightboxImage(img);
+  } else {
+    removeOverlay();
+  }
+}
+
+app.registerExtension({
+  name: EXTENSION_NAME,
+
+  setup() {
+    // Register settings
+    app.ui.settings.addSetting({
+      id: SETTINGS.ENABLED,
+      name: "Enable metadata overlay",
+      category: ["Metadata Overlay", "General", "Enable"],
+      tooltip: "Show generation metadata on fullscreen image preview",
+      type: "boolean",
+      defaultValue: true,
+      onChange: (value) => {
+        if (!value) removeOverlay();
+        else checkForLightbox();
+      },
+    });
+
+    app.ui.settings.addSetting({
+      id: SETTINGS.FIELDS,
+      name: "Visible fields",
+      category: ["Metadata Overlay", "General", "Fields"],
+      tooltip:
+        "Comma-separated list of fields to show: model, loras, sampler, seed, prompt, negative_prompt, guidance, size",
+      type: "text",
+      defaultValue: DEFAULT_FIELDS,
+      onChange: () => {
+        // Re-render if overlay is visible
+        if (currentOverlay) {
+          const src = currentOverlay.dataset.src;
+          removeOverlay();
+          const img = findLightboxImage(document);
+          if (img && img.src === src) handleLightboxImage(img);
+        }
+      },
+    });
+
+    app.ui.settings.addSetting({
+      id: SETTINGS.POSITION,
+      name: "Overlay position",
+      category: ["Metadata Overlay", "General", "Position"],
+      type: "combo",
+      defaultValue: "bottom-left",
+      options: [
+        { text: "Bottom Left", value: "bottom-left" },
+        { text: "Bottom Right", value: "bottom-right" },
+        { text: "Top Left", value: "top-left" },
+        { text: "Top Right", value: "top-right" },
+      ],
+      onChange: () => {
+        if (currentOverlay) {
+          const src = currentOverlay.dataset.src;
+          removeOverlay();
+          const img = findLightboxImage(document);
+          if (img && img.src === src) handleLightboxImage(img);
+        }
+      },
+    });
+
+    app.ui.settings.addSetting({
+      id: SETTINGS.OPACITY,
+      name: "Background opacity",
+      category: ["Metadata Overlay", "General", "Opacity"],
+      tooltip: "Background opacity of the overlay (0.3 = more transparent, 1.0 = opaque)",
+      type: "slider",
+      defaultValue: 0.8,
+      attrs: {
+        min: 0.3,
+        max: 1.0,
+        step: 0.05,
+      },
+      onChange: () => {
+        if (currentOverlay) {
+          const src = currentOverlay.dataset.src;
+          removeOverlay();
+          const img = findLightboxImage(document);
+          if (img && img.src === src) handleLightboxImage(img);
+        }
+      },
+    });
+
+    // Set up MutationObserver to detect lightbox open/close
+    observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        // Check added nodes for lightbox
+        if (mutation.addedNodes.length) {
+          for (const node of mutation.addedNodes) {
+            if (node.nodeType !== Node.ELEMENT_NODE) continue;
+            // Check if this is a galleria mask or contains one
+            if (
+              node.classList?.contains("p-galleria-mask") ||
+              node.querySelector?.(".p-galleria-mask") ||
+              node.querySelector?.(".p-galleria")
+            ) {
+              // Small delay to let the image src populate
+              setTimeout(checkForLightbox, 100);
+              return;
+            }
+          }
+        }
+
+        // Check removed nodes for lightbox closing
+        if (mutation.removedNodes.length) {
+          for (const node of mutation.removedNodes) {
+            if (node.nodeType !== Node.ELEMENT_NODE) continue;
+            if (
+              node.classList?.contains("p-galleria-mask") ||
+              node.querySelector?.(".p-galleria-mask") ||
+              node.id === OVERLAY_ID
+            ) {
+              removeOverlay();
+              return;
+            }
+          }
+        }
+
+        // Also detect attribute changes on images (src change = navigation)
+        if (
+          mutation.type === "attributes" &&
+          mutation.attributeName === "src" &&
+          mutation.target?.tagName === "IMG"
+        ) {
+          const img = findLightboxImage(document);
+          if (img && img === mutation.target) {
+            removeOverlay();
+            handleLightboxImage(img);
+          }
+        }
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["src"],
+    });
+  },
+});
