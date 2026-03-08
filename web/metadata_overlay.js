@@ -450,42 +450,6 @@ function formatMetadata(metadata, selectedFields) {
   return lines.join("\n");
 }
 
-function createOverlay(text, container) {
-  removeOverlay();
-
-  const position = getPosition();
-  const opacity = getOpacity();
-
-  const overlay = document.createElement("div");
-  overlay.id = OVERLAY_ID;
-  overlay.style.cssText = `
-    position: absolute;
-    ${position.includes("bottom") ? "bottom: 16px" : "top: 16px"};
-    ${position.includes("left") ? "left: 16px" : "right: 16px"};
-    background: rgba(0, 0, 0, ${opacity});
-    color: #e0e0e0;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    font-size: 12px;
-    line-height: 1.5;
-    padding: 12px 16px;
-    border-radius: 8px;
-    max-width: 40%;
-    max-height: 50%;
-    overflow-y: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-    z-index: 10001;
-    pointer-events: auto;
-    backdrop-filter: blur(4px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  `;
-
-  overlay.textContent = text;
-  container.appendChild(overlay);
-  currentOverlay = overlay;
-}
-
 function removeOverlay() {
   if (currentOverlay) {
     currentOverlay.remove();
@@ -524,31 +488,6 @@ function findLightboxImage(root) {
     galleria.querySelector("img");
 
   return img;
-}
-
-/**
- * Find the appropriate container to attach our overlay to.
- */
-function findOverlayContainer(img) {
-  // Try to find the galleria item container (positioned element)
-  const galleriaItem = img.closest(".p-galleria-item");
-  if (galleriaItem) {
-    galleriaItem.style.position = "relative";
-    return galleriaItem;
-  }
-
-  // Fall back to the galleria mask
-  const mask = img.closest(".p-galleria-mask");
-  if (mask) return mask;
-
-  // Last resort: use parent
-  const parent = img.parentElement;
-  if (parent) {
-    parent.style.position = "relative";
-    return parent;
-  }
-
-  return document.body;
 }
 
 async function handleLightboxImage(img) {
