@@ -72,6 +72,38 @@ function getPanelPosition() {
 }
 
 /**
+ * Determine the best panel position based on image vs viewport aspect ratios.
+ * If the image is wider relative to the viewport, a vertical (top/bottom)
+ * panel costs less area; if taller, a horizontal (left/right) panel costs less.
+ *
+ * Returns "right" or "bottom".
+ */
+function computeAdaptivePosition() {
+  const img = findLightboxImage(document);
+  if (!img || !img.naturalWidth || !img.naturalHeight) return "right";
+
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const imageAspect = img.naturalWidth / img.naturalHeight;
+  const viewportAspect = vw / vh;
+
+  // If image is wider than viewport proportionally, vertical panel is cheaper
+  if (imageAspect > viewportAspect) {
+    return "bottom";
+  }
+  return "right";
+}
+
+/**
+ * Resolve the effective panel position, replacing "adaptive" with a concrete value.
+ */
+function resolveEffectivePanelPosition() {
+  const pos = getPanelPosition();
+  if (pos === "adaptive") return computeAdaptivePosition();
+  return pos;
+}
+
+/**
  * Extract image URL info for fetching metadata.
  * Returns { type: 'view' | 'asset', params } or null.
  */
