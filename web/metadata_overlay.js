@@ -265,6 +265,61 @@ function createSidePanel(text) {
 }
 
 /**
+ * Create a floating overlay positioned at a viewport corner.
+ * This is the refactored version of the original createOverlay().
+ * Uses position:fixed so it doesn't depend on a positioned ancestor.
+ *
+ * @param {string} text - Formatted metadata text
+ */
+function createFloatingOverlay(text) {
+  removeOverlay();
+
+  const position = getPosition();
+  const opacity = getOpacity();
+
+  const overlay = document.createElement("div");
+  overlay.id = OVERLAY_ID;
+  overlay.style.cssText = `
+    position: fixed;
+    ${position.includes("bottom") ? "bottom: 16px" : "top: 16px"};
+    ${position.includes("left") ? "left: 16px" : "right: 16px"};
+    background: rgba(0, 0, 0, ${opacity});
+    color: #e0e0e0;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 12px 16px;
+    border-radius: 8px;
+    max-width: 40%;
+    max-height: 50%;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    z-index: 10001;
+    pointer-events: auto;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  `;
+
+  const content = document.createElement("div");
+  content.textContent = text;
+  overlay.appendChild(content);
+
+  overlay.appendChild(createModeToggleButton());
+
+  // Append to the galleria mask so it's scoped to lightbox lifetime
+  const mask = document.querySelector(".p-galleria-mask");
+  if (mask) {
+    mask.appendChild(overlay);
+  } else {
+    document.body.appendChild(overlay);
+  }
+
+  currentOverlay = overlay;
+}
+
+/**
  * Extract image URL info for fetching metadata.
  * Returns { type: 'view' | 'asset', params } or null.
  */
