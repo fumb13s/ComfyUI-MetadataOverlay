@@ -139,6 +139,58 @@ function injectPanelStyles(panelPosition) {
 }
 
 /**
+ * Create a small toggle button that switches between side-panel and floating modes.
+ * Returns the button DOM element.
+ */
+function createModeToggleButton() {
+  const btn = document.createElement("button");
+  const currentMode = getDisplayMode();
+  const icon = currentMode === "side-panel" ? "\u25a1" : "\u25a0"; // □ = side-panel active, ■ = floating active
+  const tooltip =
+    currentMode === "side-panel"
+      ? "Switch to floating overlay"
+      : "Switch to side panel";
+
+  btn.textContent = icon;
+  btn.title = tooltip;
+  btn.style.cssText = `
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(255, 255, 255, 0.15);
+    color: #e0e0e0;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    z-index: 10002;
+  `;
+
+  btn.addEventListener("mouseenter", () => {
+    btn.style.background = "rgba(255, 255, 255, 0.3)";
+  });
+  btn.addEventListener("mouseleave", () => {
+    btn.style.background = "rgba(255, 255, 255, 0.15)";
+  });
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const newMode = currentMode === "side-panel" ? "floating" : "side-panel";
+    app.ui.settings.setSettingValue(SETTINGS.DISPLAY_MODE, newMode);
+    // The onChange handler for DISPLAY_MODE will trigger re-render
+  });
+
+  return btn;
+}
+
+/**
  * Extract image URL info for fetching metadata.
  * Returns { type: 'view' | 'asset', params } or null.
  */
