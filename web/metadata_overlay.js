@@ -493,6 +493,7 @@ function removeOverlay() {
   }
   // Also clean up any orphaned overlays
   document.querySelectorAll(`#${OVERLAY_ID}`).forEach((el) => el.remove());
+  removePanelStyles();
 }
 
 /**
@@ -567,8 +568,13 @@ async function handleLightboxImage(img) {
   const text = formatMetadata(metadata, selectedFields);
   if (!text) return;
 
-  const container = findOverlayContainer(img);
-  createOverlay(text, container);
+  const mode = getDisplayMode();
+  if (mode === "side-panel") {
+    createSidePanel(text);
+  } else {
+    createFloatingOverlay(text);
+  }
+
   if (currentOverlay) {
     currentOverlay.dataset.src = img.src;
   }
