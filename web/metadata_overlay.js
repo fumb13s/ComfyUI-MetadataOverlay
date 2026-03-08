@@ -547,6 +547,53 @@ app.registerExtension({
     });
 
     app.ui.settings.addSetting({
+      id: SETTINGS.DISPLAY_MODE,
+      name: "Display mode",
+      category: ["Metadata Overlay", "General", "Display Mode"],
+      tooltip:
+        "Side panel pushes the image aside and never overlaps. Floating overlay sits on top of the image.",
+      type: "combo",
+      defaultValue: "side-panel",
+      options: [
+        { text: "Side Panel", value: "side-panel" },
+        { text: "Floating Overlay", value: "floating" },
+      ],
+      onChange: () => {
+        if (currentOverlay) {
+          const src = currentOverlay.dataset.src;
+          removeOverlay();
+          const img = findLightboxImage(document);
+          if (img && img.src === src) handleLightboxImage(img);
+        }
+      },
+    });
+
+    app.ui.settings.addSetting({
+      id: SETTINGS.PANEL_POSITION,
+      name: "Panel position (side panel mode)",
+      category: ["Metadata Overlay", "General", "Panel Position"],
+      tooltip:
+        "Which edge to place the side panel. Adaptive auto-picks the edge that shrinks the image least.",
+      type: "combo",
+      defaultValue: "adaptive",
+      options: [
+        { text: "Adaptive", value: "adaptive" },
+        { text: "Left", value: "left" },
+        { text: "Right", value: "right" },
+        { text: "Top", value: "top" },
+        { text: "Bottom", value: "bottom" },
+      ],
+      onChange: () => {
+        if (currentOverlay) {
+          const src = currentOverlay.dataset.src;
+          removeOverlay();
+          const img = findLightboxImage(document);
+          if (img && img.src === src) handleLightboxImage(img);
+        }
+      },
+    });
+
+    app.ui.settings.addSetting({
       id: SETTINGS.FIELDS,
       name: "Visible fields",
       category: ["Metadata Overlay", "General", "Fields"],
