@@ -191,6 +191,80 @@ function createModeToggleButton() {
 }
 
 /**
+ * Create a side panel anchored to a viewport edge. The image is shrunk via
+ * injected CSS so the panel never overlaps it.
+ *
+ * @param {string} text - Formatted metadata text
+ */
+function createSidePanel(text) {
+  removeOverlay();
+
+  const panelPosition = resolveEffectivePanelPosition();
+  const opacity = getOpacity();
+
+  injectPanelStyles(panelPosition);
+
+  const panel = document.createElement("div");
+  panel.id = OVERLAY_ID;
+  panel.style.position = "fixed";
+  panel.style.zIndex = "10001";
+  panel.style.background = `rgba(0, 0, 0, ${opacity})`;
+  panel.style.color = "#e0e0e0";
+  panel.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace";
+  panel.style.fontSize = "12px";
+  panel.style.lineHeight = "1.5";
+  panel.style.overflowY = "auto";
+  panel.style.whiteSpace = "pre-wrap";
+  panel.style.wordBreak = "break-word";
+  panel.style.pointerEvents = "auto";
+  panel.style.backdropFilter = "blur(4px)";
+  panel.style.borderColor = "rgba(255, 255, 255, 0.1)";
+  panel.style.borderStyle = "solid";
+  panel.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.3)";
+
+  if (panelPosition === "left" || panelPosition === "right") {
+    panel.style.top = "0";
+    panel.style.bottom = "0";
+    panel.style.width = `${PANEL_WIDTH}px`;
+    panel.style.padding = "16px";
+    panel.style.borderWidth = panelPosition === "left" ? "0 1px 0 0" : "0 0 0 1px";
+    if (panelPosition === "left") {
+      panel.style.left = "0";
+    } else {
+      panel.style.right = "0";
+    }
+  } else {
+    // top or bottom
+    panel.style.left = "0";
+    panel.style.right = "0";
+    panel.style.height = `${PANEL_HEIGHT}px`;
+    panel.style.padding = "12px 16px";
+    panel.style.borderWidth = panelPosition === "top" ? "0 0 1px 0" : "1px 0 0 0";
+    if (panelPosition === "top") {
+      panel.style.top = "0";
+    } else {
+      panel.style.bottom = "0";
+    }
+  }
+
+  const content = document.createElement("div");
+  content.textContent = text;
+  panel.appendChild(content);
+
+  panel.appendChild(createModeToggleButton());
+
+  // Append to the galleria mask so it's scoped to lightbox lifetime
+  const mask = document.querySelector(".p-galleria-mask");
+  if (mask) {
+    mask.appendChild(panel);
+  } else {
+    document.body.appendChild(panel);
+  }
+
+  currentOverlay = panel;
+}
+
+/**
  * Extract image URL info for fetching metadata.
  * Returns { type: 'view' | 'asset', params } or null.
  */
