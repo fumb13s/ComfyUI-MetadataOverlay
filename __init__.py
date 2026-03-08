@@ -104,6 +104,22 @@ def _extract_metadata(prompt_data, workflow_data):
                     "strength_clip": inputs.get("strength_clip", 1.0),
                 })
 
+        # rgthree Lora Loader Stack / Power Lora Loader (numbered slots)
+        if class_type in (
+            "Lora Loader Stack (rgthree)",
+            "Power Lora Loader (rgthree)",
+        ):
+            for i in range(1, 20):
+                lora_key = f"lora_{i:02d}"
+                strength_key = f"strength_{i:02d}"
+                lora_name = inputs.get(lora_key)
+                if lora_name and lora_name != "None":
+                    result["loras"].append({
+                        "name": lora_name,
+                        "strength_model": inputs.get(strength_key, 1.0),
+                        "strength_clip": inputs.get(strength_key, 1.0),
+                    })
+
         # Samplers
         if class_type in ("KSampler", "KSamplerAdvanced", "SamplerCustom"):
             sampler_node = node_data
