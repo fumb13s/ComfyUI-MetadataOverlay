@@ -153,6 +153,8 @@ function formatMetadata(metadata, selectedFields) {
     if (metadata.steps) parts.push(`${metadata.steps} steps`);
     if (metadata.cfg !== null && metadata.cfg !== undefined)
       parts.push(`cfg ${metadata.cfg}`);
+    if (metadata.denoise !== null && metadata.denoise !== undefined)
+      parts.push(`denoise ${metadata.denoise}`);
     if (parts.length) lines.push(`Sampler: ${parts.join(", ")}`);
   }
 

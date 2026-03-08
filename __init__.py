@@ -64,6 +64,7 @@ def _extract_metadata(prompt_data, workflow_data):
         "positive_prompt": None,
         "negative_prompt": None,
         "guidance": None,
+        "denoise": None,
     }
 
     if not prompt_data:
@@ -130,6 +131,9 @@ def _extract_metadata(prompt_data, workflow_data):
             seed = inputs.get("seed") or inputs.get("noise_seed")
             if seed is not None:
                 result["seed"] = seed
+            denoise = inputs.get("denoise")
+            if denoise is not None:
+                result["denoise"] = denoise
 
             # SamplerCustom gets sampler from a linked KSamplerSelect node
             if class_type == "SamplerCustom" and result["sampler"] is None:
