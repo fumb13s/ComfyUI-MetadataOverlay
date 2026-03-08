@@ -103,6 +103,41 @@ function resolveEffectivePanelPosition() {
   return pos;
 }
 
+function removePanelStyles() {
+  const existing = document.getElementById(INJECTED_STYLE_ID);
+  if (existing) existing.remove();
+}
+
+/**
+ * Inject a <style> element that constrains the galleria image to make room
+ * for the side panel.
+ *
+ * @param {"left"|"right"|"top"|"bottom"} panelPosition
+ */
+function injectPanelStyles(panelPosition) {
+  removePanelStyles();
+
+  const style = document.createElement("style");
+  style.id = INJECTED_STYLE_ID;
+
+  if (panelPosition === "left" || panelPosition === "right") {
+    style.textContent = `
+      .p-galleria-mask .p-galleria-item img {
+        max-width: calc(100vw - ${PANEL_WIDTH}px) !important;
+      }
+    `;
+  } else {
+    // top or bottom
+    style.textContent = `
+      .p-galleria-mask .p-galleria-item img {
+        max-height: calc(100vh - ${PANEL_HEIGHT}px) !important;
+      }
+    `;
+  }
+
+  document.head.appendChild(style);
+}
+
 /**
  * Extract image URL info for fetching metadata.
  * Returns { type: 'view' | 'asset', params } or null.
