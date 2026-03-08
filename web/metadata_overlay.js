@@ -6,6 +6,8 @@ const EXTENSION_NAME = "ComfyUI.MetadataOverlay";
 const SETTINGS = {
   ENABLED: "MetadataOverlay.Enabled",
   FIELDS: "MetadataOverlay.Fields",
+  DISPLAY_MODE: "MetadataOverlay.DisplayMode",
+  PANEL_POSITION: "MetadataOverlay.PanelPosition",
   POSITION: "MetadataOverlay.Position",
   OPACITY: "MetadataOverlay.Opacity",
 };
@@ -24,6 +26,9 @@ const ALL_FIELDS = [
 const DEFAULT_FIELDS = ALL_FIELDS.join(",");
 
 const OVERLAY_ID = "metadata-overlay-panel";
+const INJECTED_STYLE_ID = "metadata-overlay-injected-style";
+const PANEL_WIDTH = 350;
+const PANEL_HEIGHT = 200;
 
 let currentOverlay = null;
 let observer = null;
@@ -56,6 +61,14 @@ function getPosition() {
 
 function getOpacity() {
   return getSetting(SETTINGS.OPACITY, 0.8);
+}
+
+function getDisplayMode() {
+  return getSetting(SETTINGS.DISPLAY_MODE, "side-panel");
+}
+
+function getPanelPosition() {
+  return getSetting(SETTINGS.PANEL_POSITION, "adaptive");
 }
 
 /**
