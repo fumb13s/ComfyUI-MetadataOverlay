@@ -253,13 +253,12 @@ function createSidePanel(text) {
 
   panel.appendChild(createModeToggleButton());
 
-  // Append to the galleria mask so it's scoped to lightbox lifetime
-  const mask = document.querySelector(".p-galleria-mask");
-  if (mask) {
-    mask.appendChild(panel);
-  } else {
-    document.body.appendChild(panel);
-  }
+  // Append to document.body to avoid position:fixed issues that can occur
+  // when a parent element has transform, filter, or perspective set (which
+  // would make fixed positioning relative to that element instead of the
+  // viewport). Cleanup on lightbox close is handled by the MutationObserver
+  // that calls removeOverlay() when .p-galleria-mask is removed.
+  document.body.appendChild(panel);
 
   currentOverlay = panel;
 }
@@ -308,13 +307,10 @@ function createFloatingOverlay(text) {
 
   overlay.appendChild(createModeToggleButton());
 
-  // Append to the galleria mask so it's scoped to lightbox lifetime
-  const mask = document.querySelector(".p-galleria-mask");
-  if (mask) {
-    mask.appendChild(overlay);
-  } else {
-    document.body.appendChild(overlay);
-  }
+  // Append to document.body to avoid position:fixed issues that can occur
+  // when a parent element has transform, filter, or perspective set.
+  // Cleanup on lightbox close is handled by the MutationObserver.
+  document.body.appendChild(overlay);
 
   currentOverlay = overlay;
 }
@@ -461,6 +457,33 @@ function removeOverlay() {
 }
 
 /**
+ * Re-render the overlay using cached text, avoiding a network re-fetch.
+ * Reads dataset.text and dataset.src from the current overlay before destroying it,
+ * then creates a new overlay with the same data.
+ */
+function rerenderOverlay() {
+  if (!currentOverlay) return;
+
+  const cachedText = currentOverlay.dataset.text;
+  const cachedSrc = currentOverlay.dataset.src;
+  if (!cachedText) return;
+
+  removeOverlay();
+
+  const mode = getDisplayMode();
+  if (mode === "side-panel") {
+    createSidePanel(cachedText);
+  } else {
+    createFloatingOverlay(cachedText);
+  }
+
+  if (currentOverlay) {
+    currentOverlay.dataset.src = cachedSrc || "";
+    currentOverlay.dataset.text = cachedText;
+  }
+}
+
+/**
  * Find the fullscreen lightbox image element.
  * ComfyUI uses PrimeVue's Galleria component with class `p-galleria`.
  */
@@ -516,6 +539,7 @@ async function handleLightboxImage(img) {
 
   if (currentOverlay) {
     currentOverlay.dataset.src = img.src;
+    currentOverlay.dataset.text = text;
   }
 }
 
@@ -559,12 +583,7 @@ app.registerExtension({
         { text: "Floating Overlay", value: "floating" },
       ],
       onChange: () => {
-        if (currentOverlay) {
-          const src = currentOverlay.dataset.src;
-          removeOverlay();
-          const img = findLightboxImage(document);
-          if (img && img.src === src) handleLightboxImage(img);
-        }
+        rerenderOverlay();
       },
     });
 
@@ -584,12 +603,7 @@ app.registerExtension({
         { text: "Bottom", value: "bottom" },
       ],
       onChange: () => {
-        if (currentOverlay) {
-          const src = currentOverlay.dataset.src;
-          removeOverlay();
-          const img = findLightboxImage(document);
-          if (img && img.src === src) handleLightboxImage(img);
-        }
+        rerenderOverlay();
       },
     });
 
@@ -625,12 +639,7 @@ app.registerExtension({
         { text: "Top Right", value: "top-right" },
       ],
       onChange: () => {
-        if (currentOverlay) {
-          const src = currentOverlay.dataset.src;
-          removeOverlay();
-          const img = findLightboxImage(document);
-          if (img && img.src === src) handleLightboxImage(img);
-        }
+        rerenderOverlay();
       },
     });
 
@@ -647,12 +656,7 @@ app.registerExtension({
         step: 0.05,
       },
       onChange: () => {
-        if (currentOverlay) {
-          const src = currentOverlay.dataset.src;
-          removeOverlay();
-          const img = findLightboxImage(document);
-          if (img && img.src === src) handleLightboxImage(img);
-        }
+        rerenderOverlay();
       },
     });
 
