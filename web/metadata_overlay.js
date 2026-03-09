@@ -121,20 +121,34 @@ function injectPanelStyles(panelPosition) {
   const style = document.createElement("style");
   style.id = INJECTED_STYLE_ID;
 
-  if (panelPosition === "left" || panelPosition === "right") {
-    style.textContent = `
-      .p-galleria-mask .p-galleria-item img {
-        max-width: calc(100vw - ${PANEL_WIDTH}px) !important;
-      }
-    `;
-  } else {
-    // top or bottom
-    style.textContent = `
-      .p-galleria-mask .p-galleria-item img {
-        max-height: calc(100vh - ${PANEL_HEIGHT}px) !important;
-      }
-    `;
-  }
+  const paddingSide =
+    panelPosition === "left"
+      ? "padding-left"
+      : panelPosition === "right"
+        ? "padding-right"
+        : panelPosition === "top"
+          ? "padding-top"
+          : "padding-bottom";
+
+  const panelSize =
+    panelPosition === "left" || panelPosition === "right"
+      ? PANEL_WIDTH
+      : PANEL_HEIGHT;
+
+  const imageConstraint =
+    panelPosition === "left" || panelPosition === "right"
+      ? `max-width: calc(100vw - ${PANEL_WIDTH}px) !important;`
+      : `max-height: calc(100vh - ${PANEL_HEIGHT}px) !important;`;
+
+  style.textContent = `
+    .p-galleria-mask .p-galleria-item {
+      box-sizing: border-box !important;
+      ${paddingSide}: ${panelSize}px !important;
+    }
+    .p-galleria-mask .p-galleria-item img {
+      ${imageConstraint}
+    }
+  `;
 
   document.head.appendChild(style);
 }
