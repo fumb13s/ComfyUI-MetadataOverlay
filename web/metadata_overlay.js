@@ -33,6 +33,7 @@ const PANEL_HEIGHT = 200;
 let currentOverlay = null;
 let cachedMetadata = null;
 let observer = null;
+let isRerendering = false;
 
 function getSetting(id, defaultValue) {
   try {
@@ -183,7 +184,9 @@ function createModeToggleButton() {
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    const newMode = currentMode === "side-panel" ? "floating" : "side-panel";
+    // Read display mode at click time to avoid stale closure
+    const activeMode = getDisplayMode();
+    const newMode = activeMode === "side-panel" ? "floating" : "side-panel";
     app.ui.settings.setSettingValue(SETTINGS.DISPLAY_MODE, newMode);
     // The onChange handler for DISPLAY_MODE will trigger re-render
   });
@@ -484,13 +487,18 @@ function rerenderOverlay() {
   const cachedSrc = currentOverlay.dataset.src;
   if (!cachedText) return;
 
-  removeOverlay();
+  isRerendering = true;
+  try {
+    removeOverlay();
 
-  renderOverlay(cachedText);
+    renderOverlay(cachedText);
 
-  if (currentOverlay) {
-    currentOverlay.dataset.src = cachedSrc || "";
-    currentOverlay.dataset.text = cachedText;
+    if (currentOverlay) {
+      currentOverlay.dataset.src = cachedSrc || "";
+      currentOverlay.dataset.text = cachedText;
+    }
+  } finally {
+    isRerendering = false;
   }
 }
 
@@ -508,15 +516,20 @@ function reformatOverlay() {
   const selectedFields = getSelectedFields();
   const text = formatMetadata(cachedMetadata, selectedFields);
 
-  removeOverlay();
+  isRerendering = true;
+  try {
+    removeOverlay();
 
-  if (!text) return;
+    if (!text) return;
 
-  renderOverlay(text);
+    renderOverlay(text);
 
-  if (currentOverlay) {
-    currentOverlay.dataset.src = cachedSrc;
-    currentOverlay.dataset.text = text;
+    if (currentOverlay) {
+      currentOverlay.dataset.src = cachedSrc;
+      currentOverlay.dataset.text = text;
+    }
+  } finally {
+    isRerendering = false;
   }
 }
 
@@ -714,7 +727,7 @@ app.registerExtension({
         }
 
         // Check removed nodes for lightbox closing
-        if (mutation.removedNodes.length) {
+        if (mutation.removedNodes.length && !isRerendering) {
           for (const node of mutation.removedNodes) {
             if (node.nodeType !== Node.ELEMENT_NODE) continue;
             if (
