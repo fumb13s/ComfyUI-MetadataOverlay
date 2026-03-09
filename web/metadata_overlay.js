@@ -317,6 +317,21 @@ function createFloatingOverlay(text) {
 }
 
 /**
+ * Dispatch overlay creation to the correct renderer based on the current
+ * display-mode setting ("side-panel" vs "floating").
+ *
+ * @param {string} text - Formatted metadata text
+ */
+function renderOverlay(text) {
+  const mode = getDisplayMode();
+  if (mode === "side-panel") {
+    createSidePanel(text);
+  } else {
+    createFloatingOverlay(text);
+  }
+}
+
+/**
  * Extract image URL info for fetching metadata.
  * Returns { type: 'view' | 'asset', params } or null.
  */
@@ -471,12 +486,7 @@ function rerenderOverlay() {
 
   removeOverlay();
 
-  const mode = getDisplayMode();
-  if (mode === "side-panel") {
-    createSidePanel(cachedText);
-  } else {
-    createFloatingOverlay(cachedText);
-  }
+  renderOverlay(cachedText);
 
   if (currentOverlay) {
     currentOverlay.dataset.src = cachedSrc || "";
@@ -502,12 +512,7 @@ function reformatOverlay() {
 
   if (!text) return;
 
-  const mode = getDisplayMode();
-  if (mode === "side-panel") {
-    createSidePanel(text);
-  } else {
-    createFloatingOverlay(text);
-  }
+  renderOverlay(text);
 
   if (currentOverlay) {
     currentOverlay.dataset.src = cachedSrc;
@@ -567,12 +572,7 @@ async function handleLightboxImage(img) {
   const text = formatMetadata(metadata, selectedFields);
   if (!text) return;
 
-  const mode = getDisplayMode();
-  if (mode === "side-panel") {
-    createSidePanel(text);
-  } else {
-    createFloatingOverlay(text);
-  }
+  renderOverlay(text);
 
   if (currentOverlay) {
     currentOverlay.dataset.src = img.src;
