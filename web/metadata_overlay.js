@@ -6,6 +6,8 @@ const EXTENSION_NAME = "ComfyUI.MetadataOverlay";
 const SETTINGS = {
   ENABLED: "MetadataOverlay.Enabled",
   FIELDS: "MetadataOverlay.Fields",
+  DISPLAY_MODE: "MetadataOverlay.DisplayMode",
+  PANEL_POSITION: "MetadataOverlay.PanelPosition",
   POSITION: "MetadataOverlay.Position",
   OPACITY: "MetadataOverlay.Opacity",
 };
@@ -24,8 +26,12 @@ const ALL_FIELDS = [
 const DEFAULT_FIELDS = ALL_FIELDS.join(",");
 
 const OVERLAY_ID = "metadata-overlay-panel";
+const INJECTED_STYLE_ID = "metadata-overlay-injected-style";
+const PANEL_WIDTH = 350;
+const PANEL_HEIGHT = 200;
 
 let currentOverlay = null;
+let cachedMetadata = null;
 let observer = null;
 
 function getSetting(id, defaultValue) {
@@ -56,6 +62,273 @@ function getPosition() {
 
 function getOpacity() {
   return getSetting(SETTINGS.OPACITY, 0.8);
+}
+
+function getDisplayMode() {
+  return getSetting(SETTINGS.DISPLAY_MODE, "side-panel");
+}
+
+function getPanelPosition() {
+  return getSetting(SETTINGS.PANEL_POSITION, "adaptive");
+}
+
+/**
+ * Determine the best panel position based on image vs viewport aspect ratios.
+ * If the image is wider relative to the viewport, a vertical (top/bottom)
+ * panel costs less area; if taller, a horizontal (left/right) panel costs less.
+ *
+ * Returns "right" or "bottom".
+ */
+function computeAdaptivePosition() {
+  const img = findLightboxImage(document);
+  if (!img || !img.naturalWidth || !img.naturalHeight) return "right";
+
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const imageAspect = img.naturalWidth / img.naturalHeight;
+  const viewportAspect = vw / vh;
+
+  // If image is wider than viewport proportionally, vertical panel is cheaper
+  if (imageAspect > viewportAspect) {
+    return "bottom";
+  }
+  return "right";
+}
+
+/**
+ * Resolve the effective panel position, replacing "adaptive" with a concrete value.
+ */
+function resolveEffectivePanelPosition() {
+  const pos = getPanelPosition();
+  if (pos === "adaptive") return computeAdaptivePosition();
+  return pos;
+}
+
+function removePanelStyles() {
+  const existing = document.getElementById(INJECTED_STYLE_ID);
+  if (existing) existing.remove();
+}
+
+/**
+ * Inject a <style> element that constrains the galleria image to make room
+ * for the side panel.
+ *
+ * @param {"left"|"right"|"top"|"bottom"} panelPosition
+ */
+function injectPanelStyles(panelPosition) {
+  removePanelStyles();
+
+  const style = document.createElement("style");
+  style.id = INJECTED_STYLE_ID;
+
+  if (panelPosition === "left" || panelPosition === "right") {
+    style.textContent = `
+      .p-galleria-mask .p-galleria-item img {
+        max-width: calc(100vw - ${PANEL_WIDTH}px) !important;
+      }
+    `;
+  } else {
+    // top or bottom
+    style.textContent = `
+      .p-galleria-mask .p-galleria-item img {
+        max-height: calc(100vh - ${PANEL_HEIGHT}px) !important;
+      }
+    `;
+  }
+
+  document.head.appendChild(style);
+}
+
+/**
+ * Create a small toggle button that switches between side-panel and floating modes.
+ * Returns the button DOM element.
+ */
+function createModeToggleButton() {
+  const btn = document.createElement("button");
+  const currentMode = getDisplayMode();
+  const icon = currentMode === "side-panel" ? "\u25a1" : "\u25a0"; // □ = side-panel active, ■ = floating active
+  const tooltip =
+    currentMode === "side-panel"
+      ? "Switch to floating overlay"
+      : "Switch to side panel";
+
+  btn.textContent = icon;
+  btn.title = tooltip;
+  btn.style.cssText = `
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(255, 255, 255, 0.15);
+    color: #e0e0e0;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    z-index: 10002;
+  `;
+
+  btn.addEventListener("mouseenter", () => {
+    btn.style.background = "rgba(255, 255, 255, 0.3)";
+  });
+  btn.addEventListener("mouseleave", () => {
+    btn.style.background = "rgba(255, 255, 255, 0.15)";
+  });
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const newMode = currentMode === "side-panel" ? "floating" : "side-panel";
+    app.ui.settings.setSettingValue(SETTINGS.DISPLAY_MODE, newMode);
+    // The onChange handler for DISPLAY_MODE will trigger re-render
+  });
+
+  return btn;
+}
+
+/**
+ * Create a side panel anchored to a viewport edge. The image is shrunk via
+ * injected CSS so the panel never overlaps it.
+ *
+ * @param {string} text - Formatted metadata text
+ */
+function createSidePanel(text) {
+  removeOverlay();
+
+  const panelPosition = resolveEffectivePanelPosition();
+  const opacity = getOpacity();
+
+  injectPanelStyles(panelPosition);
+
+  const panel = document.createElement("div");
+  panel.id = OVERLAY_ID;
+  panel.style.position = "fixed";
+  panel.style.zIndex = "10001";
+  panel.style.background = `rgba(0, 0, 0, ${opacity})`;
+  panel.style.color = "#e0e0e0";
+  panel.style.fontFamily = "'Consolas', 'Monaco', 'Courier New', monospace";
+  panel.style.fontSize = "12px";
+  panel.style.lineHeight = "1.5";
+  panel.style.overflowY = "auto";
+  panel.style.whiteSpace = "pre-wrap";
+  panel.style.wordBreak = "break-word";
+  panel.style.pointerEvents = "auto";
+  panel.style.backdropFilter = "blur(4px)";
+  panel.style.borderColor = "rgba(255, 255, 255, 0.1)";
+  panel.style.borderStyle = "solid";
+  panel.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.3)";
+
+  if (panelPosition === "left" || panelPosition === "right") {
+    panel.style.top = "0";
+    panel.style.bottom = "0";
+    panel.style.width = `${PANEL_WIDTH}px`;
+    panel.style.padding = "16px";
+    panel.style.borderWidth = panelPosition === "left" ? "0 1px 0 0" : "0 0 0 1px";
+    if (panelPosition === "left") {
+      panel.style.left = "0";
+    } else {
+      panel.style.right = "0";
+    }
+  } else {
+    // top or bottom
+    panel.style.left = "0";
+    panel.style.right = "0";
+    panel.style.height = `${PANEL_HEIGHT}px`;
+    panel.style.padding = "12px 16px";
+    panel.style.borderWidth = panelPosition === "top" ? "0 0 1px 0" : "1px 0 0 0";
+    if (panelPosition === "top") {
+      panel.style.top = "0";
+    } else {
+      panel.style.bottom = "0";
+    }
+  }
+
+  const content = document.createElement("div");
+  content.textContent = text;
+  panel.appendChild(content);
+
+  panel.appendChild(createModeToggleButton());
+
+  // Append to document.body to avoid position:fixed issues that can occur
+  // when a parent element has transform, filter, or perspective set (which
+  // would make fixed positioning relative to that element instead of the
+  // viewport). Cleanup on lightbox close is handled by the MutationObserver
+  // that calls removeOverlay() when .p-galleria-mask is removed.
+  document.body.appendChild(panel);
+
+  currentOverlay = panel;
+}
+
+/**
+ * Create a floating overlay positioned at a viewport corner.
+ * This is the refactored version of the original createOverlay().
+ * Uses position:fixed so it doesn't depend on a positioned ancestor.
+ *
+ * @param {string} text - Formatted metadata text
+ */
+function createFloatingOverlay(text) {
+  removeOverlay();
+
+  const position = getPosition();
+  const opacity = getOpacity();
+
+  const overlay = document.createElement("div");
+  overlay.id = OVERLAY_ID;
+  overlay.style.cssText = `
+    position: fixed;
+    ${position.includes("bottom") ? "bottom: 16px" : "top: 16px"};
+    ${position.includes("left") ? "left: 16px" : "right: 16px"};
+    background: rgba(0, 0, 0, ${opacity});
+    color: #e0e0e0;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 12px 16px;
+    border-radius: 8px;
+    max-width: 40%;
+    max-height: 50%;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    z-index: 10001;
+    pointer-events: auto;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  `;
+
+  const content = document.createElement("div");
+  content.textContent = text;
+  overlay.appendChild(content);
+
+  overlay.appendChild(createModeToggleButton());
+
+  // Append to document.body to avoid position:fixed issues that can occur
+  // when a parent element has transform, filter, or perspective set.
+  // Cleanup on lightbox close is handled by the MutationObserver.
+  document.body.appendChild(overlay);
+
+  currentOverlay = overlay;
+}
+
+/**
+ * Dispatch overlay creation to the correct renderer based on the current
+ * display-mode setting ("side-panel" vs "floating").
+ *
+ * @param {string} text - Formatted metadata text
+ */
+function renderOverlay(text) {
+  const mode = getDisplayMode();
+  if (mode === "side-panel") {
+    createSidePanel(text);
+  } else {
+    createFloatingOverlay(text);
+  }
 }
 
 /**
@@ -189,42 +462,6 @@ function formatMetadata(metadata, selectedFields) {
   return lines.join("\n");
 }
 
-function createOverlay(text, container) {
-  removeOverlay();
-
-  const position = getPosition();
-  const opacity = getOpacity();
-
-  const overlay = document.createElement("div");
-  overlay.id = OVERLAY_ID;
-  overlay.style.cssText = `
-    position: absolute;
-    ${position.includes("bottom") ? "bottom: 16px" : "top: 16px"};
-    ${position.includes("left") ? "left: 16px" : "right: 16px"};
-    background: rgba(0, 0, 0, ${opacity});
-    color: #e0e0e0;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    font-size: 12px;
-    line-height: 1.5;
-    padding: 12px 16px;
-    border-radius: 8px;
-    max-width: 40%;
-    max-height: 50%;
-    overflow-y: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-    z-index: 10001;
-    pointer-events: auto;
-    backdrop-filter: blur(4px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  `;
-
-  overlay.textContent = text;
-  container.appendChild(overlay);
-  currentOverlay = overlay;
-}
-
 function removeOverlay() {
   if (currentOverlay) {
     currentOverlay.remove();
@@ -232,6 +469,55 @@ function removeOverlay() {
   }
   // Also clean up any orphaned overlays
   document.querySelectorAll(`#${OVERLAY_ID}`).forEach((el) => el.remove());
+  removePanelStyles();
+}
+
+/**
+ * Re-render the overlay using cached text, avoiding a network re-fetch.
+ * Reads dataset.text and dataset.src from the current overlay before destroying it,
+ * then creates a new overlay with the same data.
+ */
+function rerenderOverlay() {
+  if (!currentOverlay) return;
+
+  const cachedText = currentOverlay.dataset.text;
+  const cachedSrc = currentOverlay.dataset.src;
+  if (!cachedText) return;
+
+  removeOverlay();
+
+  renderOverlay(cachedText);
+
+  if (currentOverlay) {
+    currentOverlay.dataset.src = cachedSrc || "";
+    currentOverlay.dataset.text = cachedText;
+  }
+}
+
+/**
+ * Re-format the overlay using cached raw metadata and current field selection,
+ * avoiding a network re-fetch. Unlike rerenderOverlay() which uses cached
+ * formatted text, this re-runs formatMetadata() so field changes take effect.
+ */
+function reformatOverlay() {
+  if (!currentOverlay || !cachedMetadata) return;
+
+  const cachedSrc = currentOverlay.dataset.src;
+  if (!cachedSrc) return;
+
+  const selectedFields = getSelectedFields();
+  const text = formatMetadata(cachedMetadata, selectedFields);
+
+  removeOverlay();
+
+  if (!text) return;
+
+  renderOverlay(text);
+
+  if (currentOverlay) {
+    currentOverlay.dataset.src = cachedSrc;
+    currentOverlay.dataset.text = text;
+  }
 }
 
 /**
@@ -264,31 +550,6 @@ function findLightboxImage(root) {
   return img;
 }
 
-/**
- * Find the appropriate container to attach our overlay to.
- */
-function findOverlayContainer(img) {
-  // Try to find the galleria item container (positioned element)
-  const galleriaItem = img.closest(".p-galleria-item");
-  if (galleriaItem) {
-    galleriaItem.style.position = "relative";
-    return galleriaItem;
-  }
-
-  // Fall back to the galleria mask
-  const mask = img.closest(".p-galleria-mask");
-  if (mask) return mask;
-
-  // Last resort: use parent
-  const parent = img.parentElement;
-  if (parent) {
-    parent.style.position = "relative";
-    return parent;
-  }
-
-  return document.body;
-}
-
 async function handleLightboxImage(img) {
   if (!isEnabled()) return;
   if (!img?.src) return;
@@ -299,17 +560,23 @@ async function handleLightboxImage(img) {
   // Don't re-fetch if overlay already exists for this image
   if (currentOverlay && currentOverlay.dataset.src === img.src) return;
 
+  // New image — clear cached metadata from previous image
+  cachedMetadata = null;
+
   const metadata = await fetchMetadata(imageInfo);
   if (!metadata) return;
+
+  cachedMetadata = metadata;
 
   const selectedFields = getSelectedFields();
   const text = formatMetadata(metadata, selectedFields);
   if (!text) return;
 
-  const container = findOverlayContainer(img);
-  createOverlay(text, container);
+  renderOverlay(text);
+
   if (currentOverlay) {
     currentOverlay.dataset.src = img.src;
+    currentOverlay.dataset.text = text;
   }
 }
 
@@ -318,6 +585,7 @@ function checkForLightbox() {
   if (img) {
     handleLightboxImage(img);
   } else {
+    cachedMetadata = null;
     removeOverlay();
   }
 }
@@ -341,6 +609,43 @@ app.registerExtension({
     });
 
     app.ui.settings.addSetting({
+      id: SETTINGS.DISPLAY_MODE,
+      name: "Display mode",
+      category: ["Metadata Overlay", "General", "Display Mode"],
+      tooltip:
+        "Side panel pushes the image aside and never overlaps. Floating overlay sits on top of the image.",
+      type: "combo",
+      defaultValue: "side-panel",
+      options: [
+        { text: "Side Panel", value: "side-panel" },
+        { text: "Floating Overlay", value: "floating" },
+      ],
+      onChange: () => {
+        rerenderOverlay();
+      },
+    });
+
+    app.ui.settings.addSetting({
+      id: SETTINGS.PANEL_POSITION,
+      name: "Panel position (side panel mode)",
+      category: ["Metadata Overlay", "General", "Panel Position"],
+      tooltip:
+        "Which edge to place the side panel. Adaptive auto-picks the edge that shrinks the image least.",
+      type: "combo",
+      defaultValue: "adaptive",
+      options: [
+        { text: "Adaptive", value: "adaptive" },
+        { text: "Left", value: "left" },
+        { text: "Right", value: "right" },
+        { text: "Top", value: "top" },
+        { text: "Bottom", value: "bottom" },
+      ],
+      onChange: () => {
+        rerenderOverlay();
+      },
+    });
+
+    app.ui.settings.addSetting({
       id: SETTINGS.FIELDS,
       name: "Visible fields",
       category: ["Metadata Overlay", "General", "Fields"],
@@ -349,13 +654,8 @@ app.registerExtension({
       type: "text",
       defaultValue: DEFAULT_FIELDS,
       onChange: () => {
-        // Re-render if overlay is visible
-        if (currentOverlay) {
-          const src = currentOverlay.dataset.src;
-          removeOverlay();
-          const img = findLightboxImage(document);
-          if (img && img.src === src) handleLightboxImage(img);
-        }
+        // Re-format using cached metadata — no network re-fetch needed
+        reformatOverlay();
       },
     });
 
@@ -372,12 +672,7 @@ app.registerExtension({
         { text: "Top Right", value: "top-right" },
       ],
       onChange: () => {
-        if (currentOverlay) {
-          const src = currentOverlay.dataset.src;
-          removeOverlay();
-          const img = findLightboxImage(document);
-          if (img && img.src === src) handleLightboxImage(img);
-        }
+        rerenderOverlay();
       },
     });
 
@@ -394,12 +689,7 @@ app.registerExtension({
         step: 0.05,
       },
       onChange: () => {
-        if (currentOverlay) {
-          const src = currentOverlay.dataset.src;
-          removeOverlay();
-          const img = findLightboxImage(document);
-          if (img && img.src === src) handleLightboxImage(img);
-        }
+        rerenderOverlay();
       },
     });
 
@@ -432,6 +722,7 @@ app.registerExtension({
               node.querySelector?.(".p-galleria-mask") ||
               node.id === OVERLAY_ID
             ) {
+              cachedMetadata = null;
               removeOverlay();
               return;
             }
