@@ -31,6 +31,7 @@ const PANEL_WIDTH = 350;
 const PANEL_HEIGHT = 200;
 
 let currentOverlay = null;
+let cachedMetadata = null;
 let observer = null;
 
 function getSetting(id, defaultValue) {
@@ -484,6 +485,37 @@ function rerenderOverlay() {
 }
 
 /**
+ * Re-format the overlay using cached raw metadata and current field selection,
+ * avoiding a network re-fetch. Unlike rerenderOverlay() which uses cached
+ * formatted text, this re-runs formatMetadata() so field changes take effect.
+ */
+function reformatOverlay() {
+  if (!currentOverlay || !cachedMetadata) return;
+
+  const cachedSrc = currentOverlay.dataset.src;
+  if (!cachedSrc) return;
+
+  const selectedFields = getSelectedFields();
+  const text = formatMetadata(cachedMetadata, selectedFields);
+
+  removeOverlay();
+
+  if (!text) return;
+
+  const mode = getDisplayMode();
+  if (mode === "side-panel") {
+    createSidePanel(text);
+  } else {
+    createFloatingOverlay(text);
+  }
+
+  if (currentOverlay) {
+    currentOverlay.dataset.src = cachedSrc;
+    currentOverlay.dataset.text = text;
+  }
+}
+
+/**
  * Find the fullscreen lightbox image element.
  * ComfyUI uses PrimeVue's Galleria component with class `p-galleria`.
  */
@@ -523,8 +555,13 @@ async function handleLightboxImage(img) {
   // Don't re-fetch if overlay already exists for this image
   if (currentOverlay && currentOverlay.dataset.src === img.src) return;
 
+  // New image — clear cached metadata from previous image
+  cachedMetadata = null;
+
   const metadata = await fetchMetadata(imageInfo);
   if (!metadata) return;
+
+  cachedMetadata = metadata;
 
   const selectedFields = getSelectedFields();
   const text = formatMetadata(metadata, selectedFields);
@@ -548,6 +585,7 @@ function checkForLightbox() {
   if (img) {
     handleLightboxImage(img);
   } else {
+    cachedMetadata = null;
     removeOverlay();
   }
 }
@@ -616,13 +654,8 @@ app.registerExtension({
       type: "text",
       defaultValue: DEFAULT_FIELDS,
       onChange: () => {
-        // Re-render if overlay is visible
-        if (currentOverlay) {
-          const src = currentOverlay.dataset.src;
-          removeOverlay();
-          const img = findLightboxImage(document);
-          if (img && img.src === src) handleLightboxImage(img);
-        }
+        // Re-format using cached metadata — no network re-fetch needed
+        reformatOverlay();
       },
     });
 
@@ -689,6 +722,7 @@ app.registerExtension({
               node.querySelector?.(".p-galleria-mask") ||
               node.id === OVERLAY_ID
             ) {
+              cachedMetadata = null;
               removeOverlay();
               return;
             }
