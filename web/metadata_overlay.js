@@ -467,6 +467,11 @@ function formatMetadata(metadata, selectedFields) {
 
 function removeOverlay() {
   if (currentOverlay) {
+    // Clear the id before removing so the MutationObserver does not mistake
+    // an intentional re-render for the lightbox closing.
+    if (isRerendering) {
+      currentOverlay.id = "";
+    }
     currentOverlay.remove();
     currentOverlay = null;
   }
