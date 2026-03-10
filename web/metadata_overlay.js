@@ -503,7 +503,7 @@ function rerenderOverlay() {
       currentOverlay.dataset.text = cachedText;
     }
   } finally {
-    isRerendering = false;
+    queueMicrotask(() => { isRerendering = false; });
   }
 }
 
@@ -534,7 +534,7 @@ function reformatOverlay() {
       currentOverlay.dataset.text = text;
     }
   } finally {
-    isRerendering = false;
+    queueMicrotask(() => { isRerendering = false; });
   }
 }
 
