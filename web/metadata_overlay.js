@@ -121,14 +121,7 @@ function injectPanelStyles(panelPosition) {
   const style = document.createElement("style");
   style.id = INJECTED_STYLE_ID;
 
-  const paddingSide =
-    panelPosition === "left"
-      ? "padding-left"
-      : panelPosition === "right"
-        ? "padding-right"
-        : panelPosition === "top"
-          ? "padding-top"
-          : "padding-bottom";
+  const paddingSide = { left: "padding-left", right: "padding-right", top: "padding-top", bottom: "padding-bottom" }[panelPosition];
 
   const panelSize =
     panelPosition === "left" || panelPosition === "right"
