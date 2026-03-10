@@ -406,7 +406,13 @@ async function fetchMetadata(imageInfo) {
   }
 }
 
-function formatMetadata(metadata, selectedFields) {
+const TRUNCATION_LIMITS = {
+  "floating":    { positive: 500,  negative: 300  },
+  "side-panel":  { positive: 2000, negative: 1000 },
+};
+
+function formatMetadata(metadata, selectedFields, displayMode = "floating") {
+  const limits = TRUNCATION_LIMITS[displayMode] || TRUNCATION_LIMITS["floating"];
   const lines = [];
 
   if (selectedFields.includes("model") && metadata.model) {
@@ -456,16 +462,16 @@ function formatMetadata(metadata, selectedFields) {
 
   if (selectedFields.includes("prompt") && metadata.positive_prompt) {
     const text =
-      metadata.positive_prompt.length > 500
-        ? metadata.positive_prompt.slice(0, 500) + "..."
+      metadata.positive_prompt.length > limits.positive
+        ? metadata.positive_prompt.slice(0, limits.positive) + "..."
         : metadata.positive_prompt;
     lines.push(`Prompt: ${text}`);
   }
 
   if (selectedFields.includes("negative_prompt") && metadata.negative_prompt) {
     const text =
-      metadata.negative_prompt.length > 300
-        ? metadata.negative_prompt.slice(0, 300) + "..."
+      metadata.negative_prompt.length > limits.negative
+        ? metadata.negative_prompt.slice(0, limits.negative) + "..."
         : metadata.negative_prompt;
     lines.push(`Negative: ${text}`);
   }
@@ -530,7 +536,7 @@ function reformatOverlay() {
   if (!cachedSrc) return;
 
   const selectedFields = getSelectedFields();
-  const text = formatMetadata(cachedMetadata, selectedFields);
+  const text = formatMetadata(cachedMetadata, selectedFields, getDisplayMode());
 
   isRerendering = true;
   try {
@@ -599,7 +605,7 @@ async function handleLightboxImage(img) {
   cachedMetadata = metadata;
 
   const selectedFields = getSelectedFields();
-  const text = formatMetadata(metadata, selectedFields);
+  const text = formatMetadata(metadata, selectedFields, getDisplayMode());
   if (!text) return;
 
   renderOverlay(text);
