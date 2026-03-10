@@ -290,7 +290,8 @@ function createFloatingOverlay(text) {
     line-height: 1.5;
     padding: 12px 16px;
     border-radius: 8px;
-    max-width: 40%;
+    max-width: min(40%, 420px);
+    min-height: 120px;
     max-height: 50%;
     overflow-y: auto;
     white-space: pre-wrap;
