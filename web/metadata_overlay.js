@@ -468,7 +468,10 @@ function formatMetadata(metadata, selectedFields) {
 function removeOverlay() {
   if (currentOverlay) {
     // Clear the id before removing so the MutationObserver does not mistake
-    // an intentional re-render for the lightbox closing.
+    // an intentional re-render for the lightbox closing. This is a secondary
+    // defense alongside the `isRerendering` guard on the observer: it handles
+    // the case where the observer fires before the `queueMicrotask` reset
+    // clears the flag.
     if (isRerendering) {
       currentOverlay.id = "";
     }
@@ -525,6 +528,7 @@ function reformatOverlay() {
   try {
     removeOverlay();
 
+    // Early return is safe: `finally` still runs and queues the microtask to reset isRerendering.
     if (!text) return;
 
     renderOverlay(text);
