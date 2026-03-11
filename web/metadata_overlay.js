@@ -744,7 +744,7 @@ app.registerExtension({
               node.querySelector?.(".p-galleria")
             ) {
               scheduleCheck();
-              return;
+              return; // exits the entire MutationObserver callback; check is scheduled, no need to process remaining mutations
             }
             // Check for image replacement inside an already-open galleria
             // (Vue destroys and recreates <ComfyImage> on navigation)
@@ -754,7 +754,7 @@ app.registerExtension({
               isNodeInsideGalleriaItem(node)
             ) {
               scheduleCheck();
-              return;
+              return; // exits the entire MutationObserver callback; check is scheduled, no need to process remaining mutations
             }
           }
         }
