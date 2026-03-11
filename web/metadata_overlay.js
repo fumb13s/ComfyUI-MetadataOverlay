@@ -567,6 +567,11 @@ async function handleLightboxImage(img) {
   const metadata = await fetchMetadata(imageInfo);
   if (!metadata) return;
 
+  // Guard against stale fetch: if the user navigated while we were fetching,
+  // the lightbox now shows a different image -- discard this result.
+  const currentImg = findLightboxImage(document);
+  if (!currentImg || currentImg.src !== img.src) return;
+
   cachedMetadata = metadata;
 
   const selectedFields = getSelectedFields();
