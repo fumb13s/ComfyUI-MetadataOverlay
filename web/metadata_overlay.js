@@ -560,8 +560,9 @@ async function handleLightboxImage(img) {
   // Don't re-fetch if overlay already exists for this image
   if (currentOverlay && currentOverlay.dataset.src === img.src) return;
 
-  // New image — clear cached metadata from previous image
+  // New image — clear stale overlay and cached metadata from previous image
   cachedMetadata = null;
+  removeOverlay();
 
   const metadata = await fetchMetadata(imageInfo);
   if (!metadata) return;
