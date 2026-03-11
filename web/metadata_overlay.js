@@ -596,11 +596,17 @@ async function handleLightboxImage(img) {
   // Don't re-fetch if overlay already exists for this image
   if (currentOverlay && currentOverlay.dataset.src === img.src) return;
 
-  // New image — clear cached metadata from previous image
+  // New image — clear stale overlay and cached metadata from previous image
   cachedMetadata = null;
+  removeOverlay();
 
   const metadata = await fetchMetadata(imageInfo);
   if (!metadata) return;
+
+  // Guard against stale fetch: if the user navigated while we were fetching,
+  // the lightbox now shows a different image -- discard this result.
+  const currentImg = findLightboxImage(document);
+  if (!currentImg || currentImg.src !== img.src) return;
 
   cachedMetadata = metadata;
 
@@ -624,6 +630,37 @@ function checkForLightbox() {
     cachedMetadata = null;
     removeOverlay();
   }
+}
+
+/**
+ * Check whether a DOM node is inside the galleria's active item area.
+ */
+function isNodeInsideGalleriaItem(node) {
+  return node.closest?.(".p-galleria-item") != null;
+}
+
+/**
+ * Check whether a DOM node is or contains an <img> element.
+ */
+function nodeContainsImage(node) {
+  if (node.tagName === "IMG") return true;
+  return node.querySelector?.("img") != null;
+}
+
+let checkPending = false;
+
+/**
+ * Schedule a debounced call to checkForLightbox().
+ * Multiple calls within 100ms collapse into one, preventing redundant
+ * metadata fetches when Vue replaces DOM elements in rapid succession.
+ */
+function scheduleCheck() {
+  if (checkPending) return;
+  checkPending = true;
+  setTimeout(() => {
+    checkPending = false;
+    checkForLightbox();
+  }, 100);
 }
 
 app.registerExtension({
@@ -736,15 +773,24 @@ app.registerExtension({
         if (mutation.addedNodes.length) {
           for (const node of mutation.addedNodes) {
             if (node.nodeType !== Node.ELEMENT_NODE) continue;
-            // Check if this is a galleria mask or contains one
+            // Check if this is a galleria mask or contains one (lightbox opening)
             if (
               node.classList?.contains("p-galleria-mask") ||
               node.querySelector?.(".p-galleria-mask") ||
               node.querySelector?.(".p-galleria")
             ) {
-              // Small delay to let the image src populate
-              setTimeout(checkForLightbox, 100);
-              return;
+              scheduleCheck();
+              return; // exits the entire MutationObserver callback; check is scheduled, no need to process remaining mutations
+            }
+            // Check for image replacement inside an already-open galleria
+            // (Vue destroys and recreates <ComfyImage> on navigation)
+            if (
+              document.querySelector(".p-galleria-mask") &&
+              nodeContainsImage(node) &&
+              isNodeInsideGalleriaItem(node)
+            ) {
+              scheduleCheck();
+              return; // exits the entire MutationObserver callback; check is scheduled, no need to process remaining mutations
             }
           }
         }
