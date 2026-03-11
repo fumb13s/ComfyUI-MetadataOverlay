@@ -590,6 +590,37 @@ function checkForLightbox() {
   }
 }
 
+/**
+ * Check whether a DOM node is inside the galleria's active item area.
+ */
+function isNodeInsideGalleriaItem(node) {
+  return node.closest?.(".p-galleria-item") != null;
+}
+
+/**
+ * Check whether a DOM node is or contains an <img> element.
+ */
+function nodeContainsImage(node) {
+  if (node.tagName === "IMG") return true;
+  return node.querySelector?.("img") != null;
+}
+
+let checkPending = false;
+
+/**
+ * Schedule a debounced call to checkForLightbox().
+ * Multiple calls within 100ms collapse into one, preventing redundant
+ * metadata fetches when Vue replaces DOM elements in rapid succession.
+ */
+function scheduleCheck() {
+  if (checkPending) return;
+  checkPending = true;
+  setTimeout(() => {
+    checkPending = false;
+    checkForLightbox();
+  }, 100);
+}
+
 app.registerExtension({
   name: EXTENSION_NAME,
 
@@ -706,8 +737,7 @@ app.registerExtension({
               node.querySelector?.(".p-galleria-mask") ||
               node.querySelector?.(".p-galleria")
             ) {
-              // Small delay to let the image src populate
-              setTimeout(checkForLightbox, 100);
+              scheduleCheck();
               return;
             }
           }
