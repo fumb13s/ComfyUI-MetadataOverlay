@@ -731,11 +731,21 @@ app.registerExtension({
         if (mutation.addedNodes.length) {
           for (const node of mutation.addedNodes) {
             if (node.nodeType !== Node.ELEMENT_NODE) continue;
-            // Check if this is a galleria mask or contains one
+            // Check if this is a galleria mask or contains one (lightbox opening)
             if (
               node.classList?.contains("p-galleria-mask") ||
               node.querySelector?.(".p-galleria-mask") ||
               node.querySelector?.(".p-galleria")
+            ) {
+              scheduleCheck();
+              return;
+            }
+            // Check for image replacement inside an already-open galleria
+            // (Vue destroys and recreates <ComfyImage> on navigation)
+            if (
+              document.querySelector(".p-galleria-mask") &&
+              nodeContainsImage(node) &&
+              isNodeInsideGalleriaItem(node)
             ) {
               scheduleCheck();
               return;
