@@ -1,34 +1,11 @@
 import { app } from "../../scripts/app.js";
+import {
+  ALL_FIELDS, DEFAULT_FIELDS, OVERLAY_ID, INJECTED_STYLE_ID,
+  PANEL_WIDTH, PANEL_HEIGHT, SETTINGS,
+  parseImageSrc, fetchMetadata, formatMetadata, buildViewerUrl,
+} from "./metadata_overlay_shared.js";
 
 const EXTENSION_NAME = "ComfyUI.MetadataOverlay";
-
-// Setting IDs
-const SETTINGS = {
-  ENABLED: "MetadataOverlay.Enabled",
-  FIELDS: "MetadataOverlay.Fields",
-  DISPLAY_MODE: "MetadataOverlay.DisplayMode",
-  PANEL_POSITION: "MetadataOverlay.PanelPosition",
-  POSITION: "MetadataOverlay.Position",
-  OPACITY: "MetadataOverlay.Opacity",
-};
-
-const ALL_FIELDS = [
-  "model",
-  "loras",
-  "sampler",
-  "seed",
-  "prompt",
-  "negative_prompt",
-  "guidance",
-  "size",
-];
-
-const DEFAULT_FIELDS = ALL_FIELDS.join(",");
-
-const OVERLAY_ID = "metadata-overlay-panel";
-const INJECTED_STYLE_ID = "metadata-overlay-injected-style";
-const PANEL_WIDTH = 350;
-const PANEL_HEIGHT = 200;
 
 let currentOverlay = null;
 let cachedMetadata = null;
@@ -148,24 +125,20 @@ function injectPanelStyles(panelPosition) {
 }
 
 /**
- * Create a small toggle button that switches between side-panel and floating modes.
- * Returns the button DOM element.
+ * Create a small action button with consistent styling.
+ * @param {string} icon - Unicode character for the button
+ * @param {string} tooltip - Title/tooltip text
+ * @param {function} onClick - Click handler
+ * @param {number} rightOffset - Distance from right edge in px
  */
-function createModeToggleButton() {
+function createActionButton(icon, tooltip, onClick, rightOffset) {
   const btn = document.createElement("button");
-  const currentMode = getDisplayMode();
-  const icon = currentMode === "side-panel" ? "\u25a1" : "\u25a0"; // □ = side-panel active, ■ = floating active
-  const tooltip =
-    currentMode === "side-panel"
-      ? "Switch to floating overlay"
-      : "Switch to side panel";
-
   btn.textContent = icon;
   btn.title = tooltip;
   btn.style.cssText = `
     position: absolute;
     top: 4px;
-    right: 4px;
+    right: ${rightOffset}px;
     background: rgba(255, 255, 255, 0.15);
     color: #e0e0e0;
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -191,14 +164,61 @@ function createModeToggleButton() {
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    // Read display mode at click time to avoid stale closure
-    const activeMode = getDisplayMode();
-    const newMode = activeMode === "side-panel" ? "floating" : "side-panel";
-    app.ui.settings.setSettingValue(SETTINGS.DISPLAY_MODE, newMode);
-    // The onChange handler for DISPLAY_MODE will trigger re-render
+    onClick(e);
   });
 
   return btn;
+}
+
+/**
+ * Create a small toggle button that switches between side-panel and floating modes.
+ * Returns the button DOM element.
+ */
+function createModeToggleButton() {
+  const currentMode = getDisplayMode();
+  const icon = currentMode === "side-panel" ? "\u25a1" : "\u25a0";
+  const tooltip = currentMode === "side-panel"
+    ? "Switch to floating overlay"
+    : "Switch to side panel";
+
+  return createActionButton(icon, tooltip, () => {
+    const activeMode = getDisplayMode();
+    const newMode = activeMode === "side-panel" ? "floating" : "side-panel";
+    app.ui.settings.setSettingValue(SETTINGS.DISPLAY_MODE, newMode);
+  }, 4);
+}
+
+function createOpenInViewerButton() {
+  return createActionButton("\u2197", "Open in standalone viewer", () => {
+    const img = findLightboxImage(document);
+    if (!img) return;
+    const imageInfo = parseImageSrc(img.src);
+    const url = buildViewerUrl(imageInfo);
+    if (url) window.open(url, "_blank");
+  }, 32);
+}
+
+function createCopyViewerLinkButton() {
+  return createActionButton("\u2398", "Copy viewer link", async (e) => {
+    const img = findLightboxImage(document);
+    if (!img) return;
+    const imageInfo = parseImageSrc(img.src);
+    const url = buildViewerUrl(imageInfo);
+    if (!url) return;
+
+    const fullUrl = new URL(url, window.location.origin).href;
+    try {
+      await navigator.clipboard.writeText(fullUrl);
+      // Brief visual feedback
+      const btn = e.currentTarget;
+      const origText = btn.textContent;
+      btn.textContent = "\u2713";
+      setTimeout(() => { btn.textContent = origText; }, 1500);
+    } catch {
+      // Fallback for non-secure contexts
+      prompt("Copy this URL:", fullUrl);
+    }
+  }, 60);
 }
 
 /**
@@ -263,6 +283,8 @@ function createSidePanel(text) {
   panel.appendChild(content);
 
   panel.appendChild(createModeToggleButton());
+  panel.appendChild(createOpenInViewerButton());
+  panel.appendChild(createCopyViewerLinkButton());
 
   // Append to document.body to avoid position:fixed issues that can occur
   // when a parent element has transform, filter, or perspective set (which
@@ -318,6 +340,8 @@ function createFloatingOverlay(text) {
   overlay.appendChild(content);
 
   overlay.appendChild(createModeToggleButton());
+  overlay.appendChild(createOpenInViewerButton());
+  overlay.appendChild(createCopyViewerLinkButton());
 
   // Append to document.body to avoid position:fixed issues that can occur
   // when a parent element has transform, filter, or perspective set.
@@ -340,143 +364,6 @@ function renderOverlay(text) {
   } else {
     createFloatingOverlay(text);
   }
-}
-
-/**
- * Extract image URL info for fetching metadata.
- * Returns { type: 'view' | 'asset', params } or null.
- */
-function parseImageSrc(src) {
-  if (!src) return null;
-
-  try {
-    const url = new URL(src, window.location.origin);
-
-    // /view?filename=...&type=...&subfolder=...
-    if (url.pathname === "/view" || url.pathname.endsWith("/view")) {
-      const filename = url.searchParams.get("filename");
-      if (filename) {
-        return {
-          type: "view",
-          filename,
-          fileType: url.searchParams.get("type") || "output",
-          subfolder: url.searchParams.get("subfolder") || "",
-        };
-      }
-    }
-
-    // /api/assets/{uuid}/content
-    const assetMatch = url.pathname.match(
-      /\/api\/assets\/([0-9a-fA-F-]{36})\/content/
-    );
-    if (assetMatch) {
-      return {
-        type: "asset",
-        assetId: assetMatch[1],
-      };
-    }
-  } catch {
-    // ignore parse errors
-  }
-
-  return null;
-}
-
-async function fetchMetadata(imageInfo) {
-  try {
-    let url;
-    if (imageInfo.type === "view") {
-      const params = new URLSearchParams({
-        filename: imageInfo.filename,
-        type: imageInfo.fileType,
-        subfolder: imageInfo.subfolder,
-      });
-      url = `/metadata_overlay/image_metadata?${params}`;
-    } else if (imageInfo.type === "asset") {
-      url = `/metadata_overlay/asset_metadata?asset_id=${encodeURIComponent(imageInfo.assetId)}`;
-    } else {
-      return null;
-    }
-
-    const resp = await fetch(url);
-    if (!resp.ok) return null;
-    return await resp.json();
-  } catch {
-    return null;
-  }
-}
-
-const TRUNCATION_LIMITS = {
-  "floating":    { positive: 500,  negative: 300  },
-  "side-panel":  { positive: 2000, negative: 1000 },
-};
-
-function formatMetadata(metadata, selectedFields, displayMode = "floating") {
-  const limits = TRUNCATION_LIMITS[displayMode] || TRUNCATION_LIMITS["floating"];
-  const lines = [];
-
-  if (selectedFields.includes("model") && metadata.model) {
-    lines.push(`Model: ${metadata.model}`);
-  }
-
-  if (selectedFields.includes("loras") && metadata.loras?.length) {
-    for (const lora of metadata.loras) {
-      let s = `LoRA: ${lora.name}`;
-      if (lora.strength_model !== undefined) {
-        s += ` (model: ${lora.strength_model}`;
-        if (
-          lora.strength_clip !== undefined &&
-          lora.strength_clip !== lora.strength_model
-        ) {
-          s += `, clip: ${lora.strength_clip}`;
-        }
-        s += ")";
-      }
-      lines.push(s);
-    }
-  }
-
-  if (selectedFields.includes("sampler")) {
-    const parts = [];
-    if (metadata.sampler) parts.push(metadata.sampler);
-    if (metadata.scheduler) parts.push(metadata.scheduler);
-    if (metadata.steps) parts.push(`${metadata.steps} steps`);
-    if (metadata.cfg !== null && metadata.cfg !== undefined)
-      parts.push(`cfg ${metadata.cfg}`);
-    if (metadata.denoise !== null && metadata.denoise !== undefined)
-      parts.push(`denoise ${metadata.denoise}`);
-    if (parts.length) lines.push(`Sampler: ${parts.join(", ")}`);
-  }
-
-  if (selectedFields.includes("seed") && metadata.seed !== null && metadata.seed !== undefined) {
-    lines.push(`Seed: ${metadata.seed}`);
-  }
-
-  if (selectedFields.includes("guidance") && metadata.guidance !== null && metadata.guidance !== undefined) {
-    lines.push(`Guidance: ${metadata.guidance}`);
-  }
-
-  if (selectedFields.includes("size") && metadata.size) {
-    lines.push(`Size: ${metadata.size}`);
-  }
-
-  if (selectedFields.includes("prompt") && metadata.positive_prompt) {
-    const text =
-      metadata.positive_prompt.length > limits.positive
-        ? metadata.positive_prompt.slice(0, limits.positive) + "..."
-        : metadata.positive_prompt;
-    lines.push(`Prompt: ${text}`);
-  }
-
-  if (selectedFields.includes("negative_prompt") && metadata.negative_prompt) {
-    const text =
-      metadata.negative_prompt.length > limits.negative
-        ? metadata.negative_prompt.slice(0, limits.negative) + "..."
-        : metadata.negative_prompt;
-    lines.push(`Negative: ${text}`);
-  }
-
-  return lines.join("\n");
 }
 
 function removeOverlay() {
