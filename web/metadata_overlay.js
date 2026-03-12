@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import {
   ALL_FIELDS, DEFAULT_FIELDS, OVERLAY_ID, INJECTED_STYLE_ID,
-  PANEL_WIDTH, PANEL_HEIGHT, SETTINGS, TRUNCATION_LIMITS,
+  PANEL_WIDTH, PANEL_HEIGHT, SETTINGS,
   parseImageSrc, fetchMetadata, formatMetadata, buildViewerUrl,
 } from "./metadata_overlay_shared.js";
 
