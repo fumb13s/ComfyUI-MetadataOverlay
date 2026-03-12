@@ -239,6 +239,61 @@ def _assign_prompt_text(node_id, text, class_type, inputs, node_map, result):
         result["negative_prompt"] = text
 
 
+def _build_viewer_html(filename, file_type, subfolder, asset_id=None):
+    """Build a self-contained HTML page for the standalone metadata viewer."""
+    import html as html_module
+
+    # Build the image URL
+    if asset_id:
+        image_url = f"/api/assets/{html_module.escape(asset_id)}/content"
+        data_attrs = f'data-asset-id="{html_module.escape(asset_id)}"'
+    else:
+        params = []
+        params.append(f"filename={html_module.escape(filename)}")
+        params.append(f"type={html_module.escape(file_type)}")
+        if subfolder:
+            params.append(f"subfolder={html_module.escape(subfolder)}")
+        image_url = f"/api/view?{'&'.join(params)}"
+        data_attrs = (
+            f'data-filename="{html_module.escape(filename)}" '
+            f'data-file-type="{html_module.escape(file_type)}" '
+            f'data-subfolder="{html_module.escape(subfolder)}"'
+        )
+
+    # Determine the extension web directory path.
+    ext_dir = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metadata Viewer</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        html, body {{ width: 100%; height: 100%; background: #1a1a2e; overflow: hidden; }}
+        body {{ display: flex; align-items: center; justify-content: center; }}
+        #viewer-image {{
+            max-width: 100%; max-height: 100%;
+            object-fit: contain; display: block;
+        }}
+        noscript {{
+            color: #e0e0e0; font-family: sans-serif; text-align: center;
+            padding: 2rem;
+        }}
+    </style>
+</head>
+<body {data_attrs} data-image-url="{html_module.escape(image_url)}">
+    <noscript>
+        <p>JavaScript is required for the metadata viewer.</p>
+        <p><a href="{html_module.escape(image_url)}" style="color: #88aaff;">View raw image</a></p>
+    </noscript>
+    <img id="viewer-image" src="{html_module.escape(image_url)}" alt="Generated image">
+    <script type="module" src="/extensions/{html_module.escape(ext_dir)}/metadata_overlay_viewer.js"></script>
+</body>
+</html>"""
+
+
 def _read_png_metadata(file_path):
     """Read PNG text chunks and extract generation metadata."""
     try:
@@ -344,3 +399,60 @@ async def get_asset_metadata(request):
         )
 
     return web.json_response(metadata)
+
+
+@PromptServer.instance.routes.get("/metadata_overlay/view")
+async def get_viewer_page(request):
+    """Serve a standalone HTML viewer page for an image with metadata overlay."""
+    asset_id = request.rel_url.query.get("asset_id")
+    filename = request.rel_url.query.get("filename")
+
+    if not filename and not asset_id:
+        return web.Response(
+            text="Bad request: filename or asset_id parameter required",
+            status=400,
+            content_type="text/plain",
+        )
+
+    if asset_id:
+        try:
+            import app.assets.manager as asset_manager
+
+            owner_id = PromptServer.instance.user_manager.get_request_user_id(
+                request
+            )
+            abs_path, _, _ = asset_manager.resolve_asset_content_for_download(
+                asset_info_id=asset_id,
+                owner_id=owner_id,
+            )
+        except (ValueError, FileNotFoundError):
+            return web.Response(
+                text="Asset not found",
+                status=404,
+                content_type="text/plain",
+            )
+        except Exception as e:
+            logger.error("Failed to resolve asset %s: %s", asset_id, e)
+            return web.Response(
+                text="Failed to resolve asset",
+                status=500,
+                content_type="text/plain",
+            )
+        html_content = _build_viewer_html("", "", "", asset_id=asset_id)
+    else:
+        file_type = request.rel_url.query.get("type", "output")
+        subfolder = request.rel_url.query.get("subfolder", "")
+        file_path = _resolve_file_path(filename, file_type, subfolder)
+        if not file_path:
+            return web.Response(
+                text="File not found",
+                status=404,
+                content_type="text/plain",
+            )
+        html_content = _build_viewer_html(filename, file_type, subfolder)
+
+    return web.Response(
+        text=html_content,
+        content_type="text/html",
+        charset="utf-8",
+    )
