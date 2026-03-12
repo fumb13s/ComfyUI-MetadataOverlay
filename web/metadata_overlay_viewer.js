@@ -8,7 +8,7 @@ const scriptUrl = new URL(import.meta.url);
 const scriptDir = scriptUrl.pathname.substring(0, scriptUrl.pathname.lastIndexOf("/") + 1);
 
 const {
-  ALL_FIELDS, DEFAULT_FIELDS, SETTINGS, TRUNCATION_LIMITS,
+  ALL_FIELDS, DEFAULT_FIELDS, SETTINGS,
   PANEL_WIDTH, PANEL_HEIGHT, OVERLAY_ID, INJECTED_STYLE_ID,
   fetchMetadata, formatMetadata,
 } = await import(`${scriptDir}metadata_overlay_shared.js`);
