@@ -125,24 +125,20 @@ function injectPanelStyles(panelPosition) {
 }
 
 /**
- * Create a small toggle button that switches between side-panel and floating modes.
- * Returns the button DOM element.
+ * Create a small action button with consistent styling.
+ * @param {string} icon - Unicode character for the button
+ * @param {string} tooltip - Title/tooltip text
+ * @param {function} onClick - Click handler
+ * @param {number} rightOffset - Distance from right edge in px
  */
-function createModeToggleButton() {
+function createActionButton(icon, tooltip, onClick, rightOffset) {
   const btn = document.createElement("button");
-  const currentMode = getDisplayMode();
-  const icon = currentMode === "side-panel" ? "\u25a1" : "\u25a0"; // □ = side-panel active, ■ = floating active
-  const tooltip =
-    currentMode === "side-panel"
-      ? "Switch to floating overlay"
-      : "Switch to side panel";
-
   btn.textContent = icon;
   btn.title = tooltip;
   btn.style.cssText = `
     position: absolute;
     top: 4px;
-    right: 4px;
+    right: ${rightOffset}px;
     background: rgba(255, 255, 255, 0.15);
     color: #e0e0e0;
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -168,14 +164,61 @@ function createModeToggleButton() {
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    // Read display mode at click time to avoid stale closure
-    const activeMode = getDisplayMode();
-    const newMode = activeMode === "side-panel" ? "floating" : "side-panel";
-    app.ui.settings.setSettingValue(SETTINGS.DISPLAY_MODE, newMode);
-    // The onChange handler for DISPLAY_MODE will trigger re-render
+    onClick(e);
   });
 
   return btn;
+}
+
+/**
+ * Create a small toggle button that switches between side-panel and floating modes.
+ * Returns the button DOM element.
+ */
+function createModeToggleButton() {
+  const currentMode = getDisplayMode();
+  const icon = currentMode === "side-panel" ? "\u25a1" : "\u25a0";
+  const tooltip = currentMode === "side-panel"
+    ? "Switch to floating overlay"
+    : "Switch to side panel";
+
+  return createActionButton(icon, tooltip, () => {
+    const activeMode = getDisplayMode();
+    const newMode = activeMode === "side-panel" ? "floating" : "side-panel";
+    app.ui.settings.setSettingValue(SETTINGS.DISPLAY_MODE, newMode);
+  }, 4);
+}
+
+function createOpenInViewerButton() {
+  return createActionButton("\u2197", "Open in standalone viewer", () => {
+    const img = findLightboxImage(document);
+    if (!img) return;
+    const imageInfo = parseImageSrc(img.src);
+    const url = buildViewerUrl(imageInfo);
+    if (url) window.open(url, "_blank");
+  }, 32);
+}
+
+function createCopyViewerLinkButton() {
+  return createActionButton("\u2398", "Copy viewer link", async (e) => {
+    const img = findLightboxImage(document);
+    if (!img) return;
+    const imageInfo = parseImageSrc(img.src);
+    const url = buildViewerUrl(imageInfo);
+    if (!url) return;
+
+    const fullUrl = new URL(url, window.location.origin).href;
+    try {
+      await navigator.clipboard.writeText(fullUrl);
+      // Brief visual feedback
+      const btn = e.currentTarget;
+      const origText = btn.textContent;
+      btn.textContent = "\u2713";
+      setTimeout(() => { btn.textContent = origText; }, 1500);
+    } catch {
+      // Fallback for non-secure contexts
+      prompt("Copy this URL:", fullUrl);
+    }
+  }, 60);
 }
 
 /**
@@ -240,6 +283,8 @@ function createSidePanel(text) {
   panel.appendChild(content);
 
   panel.appendChild(createModeToggleButton());
+  panel.appendChild(createOpenInViewerButton());
+  panel.appendChild(createCopyViewerLinkButton());
 
   // Append to document.body to avoid position:fixed issues that can occur
   // when a parent element has transform, filter, or perspective set (which
@@ -295,6 +340,8 @@ function createFloatingOverlay(text) {
   overlay.appendChild(content);
 
   overlay.appendChild(createModeToggleButton());
+  overlay.appendChild(createOpenInViewerButton());
+  overlay.appendChild(createCopyViewerLinkButton());
 
   // Append to document.body to avoid position:fixed issues that can occur
   // when a parent element has transform, filter, or perspective set.
