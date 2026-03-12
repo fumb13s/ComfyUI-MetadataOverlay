@@ -10,7 +10,7 @@ const scriptDir = scriptUrl.pathname.substring(0, scriptUrl.pathname.lastIndexOf
 const {
   ALL_FIELDS, DEFAULT_FIELDS, SETTINGS, TRUNCATION_LIMITS,
   PANEL_WIDTH, PANEL_HEIGHT, OVERLAY_ID, INJECTED_STYLE_ID,
-  parseImageSrc, fetchMetadata, formatMetadata, buildViewerUrl,
+  fetchMetadata, formatMetadata,
 } = await import(`${scriptDir}metadata_overlay_shared.js`);
 
 
@@ -508,6 +508,8 @@ function createPopover() {
       document.removeEventListener("click", closeOnOutsideClick);
     }
   }
+  // Store the handler on the popover element so rerender() can clean it up
+  popover._closeHandler = closeOnOutsideClick;
   // Defer so the current click event doesn't immediately close it
   setTimeout(() => {
     document.addEventListener("click", closeOnOutsideClick);
@@ -527,8 +529,11 @@ function createSectionLabel(text) {
 function rerender() {
   if (!cachedMetadata) return;
 
-  // Close popover before re-rendering
+  // Close popover before re-rendering, cleaning up the document click listener
   const popover = document.getElementById(POPOVER_ID);
+  if (popover && popover._closeHandler) {
+    document.removeEventListener("click", popover._closeHandler);
+  }
   if (popover) popover.remove();
 
   const selectedFields = getSelectedFields();
@@ -546,10 +551,10 @@ function rerender() {
 // ── Initialization ──
 
 async function init() {
-  await loadSettings();
-
   const imageInfo = getImageInfoFromPage();
-  if (!imageInfo) return;
+  if (!imageInfo) return;  // Not on the standalone viewer page — bail out
+
+  await loadSettings();
 
   const metadata = await fetchMetadata(imageInfo);
   if (!metadata) return;

@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from urllib.parse import urlencode
 
 from aiohttp import web
 from PIL import Image
@@ -248,12 +249,10 @@ def _build_viewer_html(filename, file_type, subfolder, asset_id=None):
         image_url = f"/api/assets/{html_module.escape(asset_id)}/content"
         data_attrs = f'data-asset-id="{html_module.escape(asset_id)}"'
     else:
-        params = []
-        params.append(f"filename={html_module.escape(filename)}")
-        params.append(f"type={html_module.escape(file_type)}")
+        params = {"filename": filename, "type": file_type}
         if subfolder:
-            params.append(f"subfolder={html_module.escape(subfolder)}")
-        image_url = f"/api/view?{'&'.join(params)}"
+            params["subfolder"] = subfolder
+        image_url = f"/api/view?{urlencode(params)}"
         data_attrs = (
             f'data-filename="{html_module.escape(filename)}" '
             f'data-file-type="{html_module.escape(file_type)}" '
